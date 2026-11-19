@@ -18,8 +18,8 @@ Types are building blocks; a repo combines the ones it needs and never reference
 
 | Repo | pr | release | renovate, auto-tag, daily-scan | renovate.json |
 |---|---|---|---|---|
-| container-supervisor, env2yml | `go-pr` | `go-release` | `go-*` | `renovate/go` |
-| docker-socket-proxy-go, corefile-gen | `go-pr` + `image-pr` | `image-release` | `go-*` | `renovate/go` |
+| container-supervisor, env2yml, corefile-gen | `go-pr` | `go-release` | `go-*` | `renovate/go` |
+| docker-socket-proxy-go | `go-pr` + `image-pr` | `image-release` | `go-*` | `renovate/go` |
 | coredns-acmednschallenge, coredns-traefik | own `ci.yml` | `coredns-plugin-release` | `coredns-plugin-*` | `renovate/coredns-plugin` |
 
 coredns-plugin repos keep their own `ci.yml` (integration tests are plugin-specific) and their `.github/ci/*.sh` scripts (`sbom.sh` is used by release and daily scan).
@@ -126,7 +126,7 @@ jobs:
 
 | Workflow | Inputs |
 |---|---|
-| `go-release` | `binary-name` (required), `package` (default `.`) |
+| `go-release` | `binary-name` (required), `package` (default `.`), `targets` (GOOS/GOARCH pairs, default linux, darwin, windows on amd64/arm64 + linux/arm) |
 | `image-release` | none; `docker-bake.hcl` reads `VERSION`, `GIT_SHA`, `LATEST` (only add `:latest` when `LATEST == "true"`) |
 | `coredns-plugin-release` | `plugin-name` (required, names `<plugin-name>.cdx.json`) |
 

@@ -12,6 +12,10 @@ on:
         description: Go package to build
         type: string
         default: .
+      targets:
+        description: Space-separated GOOS/GOARCH pairs
+        type: string
+        default: linux/amd64 linux/arm64 linux/arm darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 jobs:
   release:
@@ -29,10 +33,11 @@ jobs:
         env:
           NAME: ${{ inputs.binary-name }}
           PKG: ${{ inputs.package }}
+          TARGETS: ${{ inputs.targets }}
         run: |
           export CGO_ENABLED=0  # static on every target, incl. native amd64
           export GOARM=7  # only read when GOARCH=arm
-          for target in linux/amd64 linux/arm64 linux/arm darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+          for target in $TARGETS; do
             export GOOS=${target%/*} GOARCH=${target#*/}
             out="dist/${NAME}-${GOOS}-${GOARCH}"
             [ "$GOARCH" = arm ] && out="${out}v7"
