@@ -26,6 +26,7 @@ coredns-plugin repos keep their own `ci.yml` (integration tests are plugin-speci
 
 ## Using it in a repo
 
+No releases: repos reference `@main`, and this repo only gets dependency updates from Renovate.
 Triggers, permissions and the `ci-ok` job stay in the repo: GitHub doesn't let a reusable workflow define its triggers, and `ci-ok` is the required check in the ruleset, so its name must not change.
 Example for a Go CLI repo:
 
@@ -37,10 +38,10 @@ on:
     branches: [main, 'release/**']
 jobs:
   go:
-    uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/go-pr.yml@<ref>
+    uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/go-pr.yml@main
   # image repos add:
   # image:
-  #   uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/image-pr.yml@<ref>
+  #   uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/image-pr.yml@main
   # The only required check in the ruleset. Add new jobs to `needs`.
   ci-ok:
     if: always()
@@ -61,7 +62,7 @@ permissions:
   contents: write        # image-release also needs packages: write
 jobs:
   release:
-    uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/go-release.yml@<ref>
+    uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/go-release.yml@main
     with:
       binary-name: env2yml
       package: ./cmd/env2yml
@@ -76,7 +77,7 @@ on:
 permissions: {}
 jobs:
   tag:
-    uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/go-auto-tag.yml@<ref>
+    uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/go-auto-tag.yml@main
     secrets: inherit
 ```
 
@@ -96,7 +97,7 @@ on:
 permissions: {}
 jobs:
   renovate:
-    uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/go-renovate.yml@<ref>
+    uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/go-renovate.yml@main
     secrets: inherit
 ```
 
@@ -110,7 +111,7 @@ on:
   workflow_dispatch:
 jobs:
   scan:
-    uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/go-daily-scan.yml@<ref>
+    uses: M-S-Software-Engineering-AG/ci-workflows/.github/workflows/go-daily-scan.yml@main
 ```
 
 ```json
@@ -134,3 +135,4 @@ jobs:
 - The automation GitHub App must be installed on ci-workflows: Renovate reads the presets from here.
 - Org variable `AUTOMATION_APP_CLIENT_ID` and secret `AUTOMATION_APP_KEY` must be available to the calling repo.
 - If ci-workflows is private, only repos in the M-S-Software-Engineering-AG org can call it.
+

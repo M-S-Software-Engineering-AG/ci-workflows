@@ -7,3 +7,4 @@
 - Type files call common ones with a local `./.github/workflows/common-*.yml` reference (same commit, no version drift).
 - Triggers, permissions and the `ci-ok` required-check job stay in the consumer repo.
 - Concurrency and permissions inside reusable workflows are set at job level.
+- No releases or tags: consumers reference `@main`; this repo only maintains `main` and Renovate keeps its dependencies up to date.
