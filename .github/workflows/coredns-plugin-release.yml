@@ -1,0 +1,41 @@
+name: coredns-plugin release
+
+# The plugin ships as source; the release carries an SBOM of deps.ini (Trivy-scanned).
+# Needs .github/ci/sbom.sh in the plugin repo. Caller triggers on push of v* tags and grants `contents: write`.
+on:
+  workflow_call:
+    inputs:
+      plugin-name:
+        description: Names the SBOM asset (<plugin-name>.cdx.json)
+        type: string
+        required: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SBOM: ${{ inputs.plugin-name }}.cdx.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: SBOM
+        run: .github/ci/sbom.sh "$SBOM"
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: sbom
+          scan-ref: ${{ env.SBOM }}
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+      # An older release line must not move the "Latest" release.
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'v*' HEAD^)
+          highest=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          gh release create "$GITHUB_REF_NAME" "$SBOM" --generate-notes --notes-start-tag "$prev" \
+            --latest="$([ "$highest" = "$GITHUB_REF_NAME" ] && echo true || echo false)"

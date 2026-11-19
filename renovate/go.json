@@ -1,0 +1,11 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>M-S-Software-Engineering-AG/ci-workflows//renovate/common"],
+  "packageRules": [
+    {
+      "description": "Bump the go directive so CI (setup-go reads go.mod) builds with the latest patch",
+      "matchDatasources": ["golang-version"],
+      "rangeStrategy": "bump"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+name: coredns-plugin renovate
+
+on:
+  workflow_call:
+
+jobs:
+  renovate:
+    uses: ./.github/workflows/common-renovate.yml
+    with:
+      allowed-commands: '["^find \\. -name .\\*\\.go. -exec sed -i -E "]'  # import-path rewrite on major Go bumps (renovate/coredns-plugin.json)
+    secrets: inherit

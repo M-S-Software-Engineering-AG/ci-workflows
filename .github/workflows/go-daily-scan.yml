@@ -1,0 +1,8 @@
+name: go daily scan
+
+on:
+  workflow_call:
+
+jobs:
+  scan:
+    uses: ./.github/workflows/common-daily-scan.yml

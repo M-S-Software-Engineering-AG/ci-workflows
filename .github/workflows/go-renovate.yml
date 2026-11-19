@@ -1,0 +1,9 @@
+name: go renovate
+
+on:
+  workflow_call:
+
+jobs:
+  renovate:
+    uses: ./.github/workflows/common-renovate.yml
+    secrets: inherit

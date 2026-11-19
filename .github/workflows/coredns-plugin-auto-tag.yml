@@ -1,0 +1,11 @@
+name: coredns-plugin auto tag
+
+on:
+  workflow_call:
+
+jobs:
+  tag:
+    uses: ./.github/workflows/common-auto-tag.yml
+    with:
+      source-paths: "*.go :!*_test.go deps.ini"
+    secrets: inherit

@@ -1,0 +1,55 @@
+name: common daily scan
+
+# Trivy scan of main and every release/** branch. Caller keeps the schedule.
+on:
+  workflow_call:
+    inputs:
+      prepare:
+        description: Shell command run in the checkout before the scan (e.g. generate an SBOM)
+        type: string
+        default: ''
+      scan-type:
+        type: string
+        default: fs
+      scan-ref:
+        type: string
+        default: .
+
+jobs:
+  branches:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.list.outputs.value }}
+    steps:
+      - id: list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          list=$(gh api "repos/$GITHUB_REPOSITORY/branches?per_page=100" --paginate --jq '.[].name | select(startswith("release/"))' \
+            | jq -Rnc '["main"] + [inputs]')
+          echo "value=$list" >> "$GITHUB_OUTPUT"
+
+  scan:
+    needs: branches
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(needs.branches.outputs.list) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.branch }}
+      - name: Prepare
+        if: inputs.prepare != ''
+        env:
+          PREPARE: ${{ inputs.prepare }}
+        run: bash -c "$PREPARE"
+      - uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_DETECTION_PRIORITY: comprehensive
+        with:
+          scan-type: ${{ inputs.scan-type }}
+          scan-ref: ${{ inputs.scan-ref }}
+          severity: HIGH,CRITICAL
+          exit-code: '1'

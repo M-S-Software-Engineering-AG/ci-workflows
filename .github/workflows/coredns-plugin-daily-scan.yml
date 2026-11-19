@@ -1,0 +1,13 @@
+name: coredns-plugin daily scan
+
+on:
+  workflow_call:
+
+jobs:
+  scan:
+    uses: ./.github/workflows/common-daily-scan.yml
+    with:
+      # The repo has no go.mod; deps.ini lists what the plugin adds on top of CoreDNS.
+      prepare: .github/ci/sbom.sh sbom.cdx.json
+      scan-type: sbom
+      scan-ref: sbom.cdx.json

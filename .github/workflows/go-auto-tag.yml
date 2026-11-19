@@ -1,0 +1,11 @@
+name: go auto tag
+
+on:
+  workflow_call:
+
+jobs:
+  tag:
+    uses: ./.github/workflows/common-auto-tag.yml
+    with:
+      source-paths: "*.go :!*_test.go go.mod go.sum Dockerfile docker-bake.hcl"
+    secrets: inherit
