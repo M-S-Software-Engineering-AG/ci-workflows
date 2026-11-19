@@ -122,17 +122,17 @@ jobs:
 }
 ```
 
-### Release inputs
+### Inputs
 
 | Workflow | Inputs |
 |---|---|
 | `go-release` | `binary-name` (required), `package` (default `.`), `targets` (GOOS/GOARCH pairs, default linux, darwin, windows on amd64/arm64 + linux/arm) |
 | `image-release` | none; `docker-bake.hcl` reads `VERSION`, `GIT_SHA`, `LATEST` (only add `:latest` when `LATEST == "true"`) |
+| `go-auto-tag` | `extra-paths` (default empty; docker-socket-proxy-go passes `Dockerfile docker-bake.hcl` so base-image updates release) |
 | `coredns-plugin-release` | `plugin-name` (required, names `<plugin-name>.cdx.json`) |
 
 ## Requirements
 
 - The automation GitHub App must be installed on ci-workflows: Renovate reads the presets from here.
 - Org variable `AUTOMATION_APP_CLIENT_ID` and secret `AUTOMATION_APP_KEY` must be available to the calling repo.
-- If ci-workflows is private, only repos in the M-S-Software-Engineering-AG org can call it.
 

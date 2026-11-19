@@ -2,10 +2,15 @@ name: go auto tag
 
 on:
   workflow_call:
+    inputs:
+      extra-paths:
+        description: Space-separated pathspecs that also count as source, e.g. "Dockerfile docker-bake.hcl" for image repos
+        type: string
+        default: ''
 
 jobs:
   tag:
     uses: ./.github/workflows/common-auto-tag.yml
     with:
-      source-paths: "*.go :!*_test.go go.mod go.sum Dockerfile docker-bake.hcl"
+      source-paths: "*.go :!*_test.go go.mod go.sum ${{ inputs.extra-paths }}"
     secrets: inherit
