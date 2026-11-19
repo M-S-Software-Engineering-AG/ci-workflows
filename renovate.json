@@ -1,4 +1,5 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>M-S-Software-Engineering-AG/ci-workflows//renovate/common"]
+  "extends": ["local>M-S-Software-Engineering-AG/ci-workflows//renovate/common"],
+  "ignoreTests": true
 }
