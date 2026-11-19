@@ -1,0 +1,14 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>M-S-Software-Engineering-AG/ci-workflows//renovate/common"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Versions pinned below a `# renovate: datasource=… depName=…` comment, as an ARG default or a bake variable default",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/", "/(^|/)docker-bake\\.hcl$/"],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s+(?:ARG \\w+=|variable \"\\w+\" \\{\\s*default\\s*=\\s*\")(?<currentValue>[^\"\\s]+)"
+      ]
+    }
+  ]
+}

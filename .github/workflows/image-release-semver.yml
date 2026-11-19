@@ -1,4 +1,4 @@
-name: image release
+name: image release semver
 
 # Language-agnostic: builds docker-bake.hcl, Trivy-scans every target, pushes to ghcr, creates the GitHub release.
 # The bake file reads VERSION, GIT_SHA and LATEST. Caller triggers on push of v* tags and grants

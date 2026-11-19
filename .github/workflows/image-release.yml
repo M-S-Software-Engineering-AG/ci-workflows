@@ -1,0 +1,93 @@
+name: image release
+
+# Language-agnostic: releases docker-bake.hcl when its <app-version>-Y.Z tag is new. Builds, Trivy-scans every
+# target, pushes to ghcr, tags the commit <app-version>-Y.Z (immutable) and <app-version>-Y (rolling), creates the
+# GitHub release. Caller triggers on push to main (paths: docker-bake.hcl) and workflow_dispatch, grants
+# `contents: write` + `packages: write` and passes `secrets: inherit` for AUTOMATION_APP_KEY.
+on:
+  workflow_call:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: image-release-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      # Bumping IMAGE_REVISION (or the app version) in docker-bake.hcl is what cuts a release.
+      - name: Resolve version
+        id: version
+        run: |
+          refs=$(docker buildx bake -f docker-bake.hcl --print | jq -r '.target[].tags[]')
+          if bad=$(grep -vE ':(latest(-debug)?|[^:]+-[0-9]+(\.[0-9]+)?(-debug)?)$' <<< "$refs"); then
+            echo "::error::tags must be <app-version>-Y or <app-version>-Y.Z (optionally -debug), or latest[-debug]: $bad"
+            exit 1
+          fi
+          version=$(grep -E ':[^:]+-[0-9]+\.[0-9]+$' <<< "$refs" | head -1) || true
+          version=${version##*:}
+          [ -n "$version" ] || { echo "::error::no <app-version>-Y.Z tag in docker-bake.hcl"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
+            echo "$version is already released, skipping"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+      # Scan before push: load one platform locally; the push below reuses the build cache.
+      - name: Build for scan
+        if: steps.version.outputs.new
+        uses: docker/bake-action@v7
+        with:
+          files: docker-bake.hcl
+          set: '*.platform=linux/amd64'
+          load: true
+      - uses: aquasecurity/setup-trivy@v0.2.3
+        if: steps.version.outputs.new
+      # *-debug targets are skipped: same binary as their base target, plus a busybox shell for troubleshooting.
+      - name: Trivy scan
+        if: steps.version.outputs.new
+        run: |
+          mapfile -t images < <(docker buildx bake -f docker-bake.hcl --print \
+            | jq -r '.target | to_entries[] | select(.key | endswith("-debug") | not) | .value.tags[0]')
+          for image in "${images[@]}"; do
+            trivy image --severity HIGH,CRITICAL --exit-code 1 "$image"
+          done
+      - uses: docker/login-action@v4
+        if: steps.version.outputs.new
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/bake-action@v7
+        if: steps.version.outputs.new
+        with:
+          files: docker-bake.hcl
+          push: true
+      # The org ruleset protect-tags lets only the app create and move tags.
+      - uses: actions/create-github-app-token@v3
+        if: steps.version.outputs.new
+        id: app
+        with:
+          client-id: ${{ vars.AUTOMATION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_KEY }}
+      - name: Tag and create release
+        if: steps.version.outputs.new
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          prev=$(gh release view --json tagName --jq .tagName 2>/dev/null) || prev=
+          remote="https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git tag "$VERSION"
+          git tag -f "${VERSION%.*}"
+          git push "$remote" "refs/tags/$VERSION"
+          git push -f "$remote" "refs/tags/${VERSION%.*}"
+          gh release create "$VERSION" --generate-notes ${prev:+--notes-start-tag "$prev"} --latest

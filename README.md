@@ -10,7 +10,7 @@ GitHub only finds reusable workflows directly in `.github/workflows/` (no subfol
 |---|---|---|
 | `common-` | internal building blocks, **never referenced by a repo** | renovate, auto-tag, daily-scan |
 | `go-` | Go code: tests, binaries | renovate, auto-tag, pr, release, daily-scan |
-| `image-` | Docker image via `docker-bake.hcl`, any language | pr, release |
+| `image-` | Docker image via `docker-bake.hcl`, any language | pr, release, release-semver, daily-scan |
 | `coredns-plugin-` | CoreDNS plugins | renovate, auto-tag, release, daily-scan |
 
 A `<type>-*.yml` either holds its own logic or calls a `common-*.yml` with the type's settings.
@@ -19,7 +19,8 @@ Types are building blocks; a repo combines the ones it needs and never reference
 | Repo | pr | release | renovate, auto-tag, daily-scan | renovate.json |
 |---|---|---|---|---|
 | container-supervisor, env2yml, corefile-gen | `go-pr` | `go-release` | `go-*` | `renovate/go` |
-| docker-socket-proxy-go | `go-pr` + `image-pr` | `image-release` | `go-*` | `renovate/go` |
+| docker-socket-proxy-go | `go-pr` + `image-pr` | `image-release-semver` | `go-*` | `renovate/go` |
+| rootless-containers-coredns | `go-pr` + `image-pr` | `image-release` | `go-renovate`, `image-daily-scan` (no auto-tag) | `renovate/image` |
 | coredns-acmednschallenge, coredns-traefik | own `ci.yml` | `coredns-plugin-release` | `coredns-plugin-*` | `renovate/coredns-plugin` |
 
 coredns-plugin repos keep their own `ci.yml` (integration tests are plugin-specific) and their `.github/ci/*.sh` scripts (`sbom.sh` is used by release and daily scan).
@@ -127,7 +128,9 @@ jobs:
 | Workflow | Inputs |
 |---|---|
 | `go-release` | `binary-name` (required), `package` (default `.`), `targets` (GOOS/GOARCH pairs, default linux, darwin, windows on amd64/arm64 + linux/arm) |
-| `image-release` | none; `docker-bake.hcl` reads `VERSION`, `GIT_SHA`, `LATEST` (only add `:latest` when `LATEST == "true"`) |
+| `image-release` | none; caller triggers on push to `main` (paths `docker-bake.hcl`) and `workflow_dispatch`, `secrets: inherit`. Tags in `docker-bake.hcl` must be `<app-version>-Y.Z`, `<app-version>-Y` (optionally `-debug`) or `latest[-debug]`; `Y.Z` is the `IMAGE_REVISION` bake variable. A release is cut when the `<app-version>-Y.Z` git tag doesn't exist yet: the commit is tagged `<app-version>-Y.Z` and the rolling `<app-version>-Y` is moved |
+| `image-release-semver` | none; legacy, for repos tagged `v*` by `go-auto-tag`. `docker-bake.hcl` reads `VERSION`, `GIT_SHA`, `LATEST` (only add `:latest` when `LATEST == "true"`) |
+| `image-daily-scan` | none; scans every published `:latest` / `:latest-debug` tag in `docker-bake.hcl` |
 | `go-auto-tag` | `extra-paths` (default empty; docker-socket-proxy-go passes `Dockerfile docker-bake.hcl` so base-image updates release) |
 | `coredns-plugin-release` | `plugin-name` (required, names `<plugin-name>.cdx.json`) |
 
