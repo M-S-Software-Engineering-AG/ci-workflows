@@ -1,0 +1,62 @@
+name: image release semver
+
+# Language-agnostic: builds docker-bake.hcl, Trivy-scans every target, pushes to ghcr, creates the GitHub release.
+# The bake file reads VERSION, GIT_SHA and LATEST. Caller triggers on push of v* tags and grants
+# `contents: write` + `packages: write`.
+on:
+  workflow_call:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    env:
+      VERSION: ${{ github.ref_name }}
+      GIT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # An older release line must not move :latest or the "Latest" release.
+      - name: Resolve previous and highest tag
+        id: tags
+        run: |
+          echo "prev=$(git describe --tags --abbrev=0 --match 'v*' HEAD^)" >> "$GITHUB_OUTPUT"
+          highest=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          latest=$([ "$highest" = "$GITHUB_REF_NAME" ] && echo true || echo false)
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "LATEST=$latest" >> "$GITHUB_ENV"
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      # Scan before push: load one platform locally; the push below reuses the build cache.
+      - name: Build for scan
+        uses: docker/bake-action@v7
+        with:
+          files: docker-bake.hcl
+          set: '*.platform=linux/amd64'
+          load: true
+      - uses: aquasecurity/setup-trivy@v0.3.1
+      # *-debug targets are skipped: same binary as their base target, plus a busybox shell for troubleshooting.
+      - name: Trivy scan
+        run: |
+          mapfile -t images < <(docker buildx bake -f docker-bake.hcl --print \
+            | jq -r '.target | to_entries[] | select(.key | endswith("-debug") | not) | .value.tags[0]')
+          for image in "${images[@]}"; do
+            trivy image --severity HIGH,CRITICAL --exit-code 1 "$image"
+          done
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/bake-action@v7
+        with:
+          files: docker-bake.hcl
+          push: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREV: ${{ steps.tags.outputs.prev }}
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes --notes-start-tag "$PREV" --latest="$LATEST"
