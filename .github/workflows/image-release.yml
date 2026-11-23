@@ -1,17 +1,20 @@
 name: image release
 
-# Language-agnostic: releases docker-bake.hcl from a release/* branch whenever the image inputs changed since the
-# last release. Builds, Trivy-scans every target, pushes to ghcr, tags the commit <app-version>-Y.Z (immutable) and
-# <app-version>-Y (rolling), creates the GitHub release. main never releases; each line lives on its own branch
-# (e.g. release/v3.7.19-6 next to release/v3.8.0-1) and only the highest version gets :latest and the Latest release.
-# Caller triggers on push to release/** and workflow_dispatch, grants `contents: write` + `packages: write` and
-# passes `secrets: inherit` for AUTOMATION_APP_KEY.
+# Language-agnostic: releases docker-bake.hcl whenever the image inputs changed since the last release. Builds,
+# Trivy-scans every target, pushes to ghcr, tags the commit <app-version>-Y.Z (immutable) and <app-version>-Y
+# (rolling), creates the GitHub release. Caller triggers on push to main and workflow_dispatch (passing its
+# `breaking` input through), grants `contents: write` + `packages: write` and passes `secrets: inherit` for
+# AUTOMATION_APP_KEY.
 on:
   workflow_call:
+    inputs:
+      breaking:
+        description: Breaking repackaging of the same app version, release (Y+1).0
+        type: boolean
+        default: false
 
 jobs:
   release:
-    if: startsWith(github.ref_name, 'release/')
     runs-on: ubuntu-latest
     concurrency:
       group: image-release-${{ github.repository }}
@@ -25,11 +28,13 @@ jobs:
           fetch-depth: 0
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
-      # IMAGE_REVISION in docker-bake.hcl is Y.Z: Y is bumped by hand, Z is a floor. When anything outside
-      # .github and docs changed since the last <app-version>-Y.* tag (Renovate bumping a dependency, a Dockerfile
-      # edit), Z is raised past that tag and baked into the resolved $BAKE file the later steps use.
+      # The revision Y.Z comes from the git tags, not the file: a new app version starts at 1.0, any other change
+      # since the last <app-version>-Y.Z tag (Renovate bumping a dependency, a Dockerfile edit) releases Y.(Z+1),
+      # `breaking` releases (Y+1).0. It's exported as IMAGE_REVISION, which bake reads over the file default.
       - name: Resolve version
         id: version
+        env:
+          BREAKING: ${{ inputs.breaking }}
         run: |
           refs=$(docker buildx bake -f docker-bake.hcl --print | jq -r '.target[].tags[]')
           if bad=$(grep -vE ':(latest(-debug)?|[^:]+-[0-9]+(\.[0-9]+)?(-debug)?)$' <<< "$refs"); then
@@ -39,38 +44,30 @@ jobs:
           version=$(grep -E ':[^:]+-[0-9]+\.[0-9]+$' <<< "$refs" | head -1) || true
           version=${version##*:}
           [ -n "$version" ] || { echo "::error::no <app-version>-Y.Z tag in docker-bake.hcl"; exit 1; }
-          app=${version%-*} rev=${version##*-}
-          y=${rev%.*} z=${rev#*.}
-          last=-1
-          for t in $(git tag -l "$app-$y.*"); do
-            n=${t#"$app-$y."}
-            if [[ $n =~ ^[0-9]+$ ]] && (( n > last )); then last=$n; fi
-          done
-          if (( z > last )); then
-            next=$z # first release of this app version / Y, or Z raised by hand
-          elif git diff --quiet "$app-$y.$last" HEAD -- . ':!.github' ':!*.md' ':!LICENSE' ':!renovate.json'; then
-            echo "nothing changed since $app-$y.$last, skipping"
+          app=${version%-*}
+          last=$(for t in $(git tag -l "$app-*"); do
+            rev=${t#"$app-"}
+            if [[ $rev =~ ^[0-9]+\.[0-9]+$ ]]; then echo "$rev"; fi
+          done | sort -V | tail -1)
+          if [ -z "$last" ]; then
+            next=1.0
+          elif [ "$BREAKING" = true ]; then
+            next=$((${last%.*} + 1)).0
+          elif git diff --quiet "$app-$last" HEAD -- . ':!.github' ':!*.md' ':!LICENSE' ':!renovate.json'; then
+            echo "nothing changed since $app-$last, skipping"
             exit 0
           else
-            next=$((last + 1))
+            next=${last%.*}.$((${last#*.} + 1))
           fi
-          version=$app-$y.$next
-          highest=$( { git tag -l; echo "$version"; } | grep -E -- '-[0-9]+\.[0-9]+$' | sort -V | tail -1)
-          latest=$([ "$highest" = "$version" ] && echo true || echo false)
-          filter='.'
-          [ "$latest" = true ] || filter='.target[] |= (.tags |= map(select(test(":latest(-debug)?$") | not)))'
-          bake=$RUNNER_TEMP/bake.json
-          IMAGE_REVISION=$y.$next docker buildx bake -f docker-bake.hcl --print | jq "$filter" > "$bake"
-          echo "BAKE=$bake" >> "$GITHUB_ENV"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_REVISION=$next" >> "$GITHUB_ENV"
+          echo "version=$app-$next" >> "$GITHUB_OUTPUT"
           echo "new=true" >> "$GITHUB_OUTPUT"
       # Scan before push: load one platform locally; the push below reuses the build cache.
       - name: Build for scan
         if: steps.version.outputs.new
         uses: docker/bake-action@v7
         with:
-          files: ${{ env.BAKE }}
+          files: docker-bake.hcl
           set: '*.platform=linux/amd64'
           load: true
       - uses: aquasecurity/setup-trivy@v0.3.1
@@ -79,7 +76,7 @@ jobs:
       - name: Trivy scan
         if: steps.version.outputs.new
         run: |
-          mapfile -t images < <(docker buildx bake -f "$BAKE" --print \
+          mapfile -t images < <(docker buildx bake -f docker-bake.hcl --print \
             | jq -r '.target | to_entries[] | select(.key | endswith("-debug") | not) | .value.tags[0]')
           for image in "${images[@]}"; do
             trivy image --severity HIGH,CRITICAL --exit-code 1 "$image"
@@ -93,7 +90,7 @@ jobs:
       - uses: docker/bake-action@v7
         if: steps.version.outputs.new
         with:
-          files: ${{ env.BAKE }}
+          files: docker-bake.hcl
           push: true
       # The org ruleset protect-tags lets only the app create and move tags.
       - uses: actions/create-github-app-token@v3
@@ -108,13 +105,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APP_TOKEN: ${{ steps.app.outputs.token }}
           VERSION: ${{ steps.version.outputs.version }}
-          LATEST: ${{ steps.version.outputs.latest }}
         run: |
-          # Previous immutable <app-version>-Y.Z tag on this branch's history (rolling -Y tags have no dot after the -).
-          prev=$(git describe --tags --abbrev=0 --match '*-[0-9]*.[0-9]*' HEAD 2>/dev/null) || prev=
+          prev=$(gh release view --json tagName --jq .tagName 2>/dev/null) || prev=
           remote="https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git tag "$VERSION"
           git tag -f "${VERSION%.*}"
           git push "$remote" "refs/tags/$VERSION"
           git push -f "$remote" "refs/tags/${VERSION%.*}"
-          gh release create "$VERSION" --generate-notes ${prev:+--notes-start-tag "$prev"} --latest="$LATEST"
+          gh release create "$VERSION" --generate-notes ${prev:+--notes-start-tag "$prev"} --latest
