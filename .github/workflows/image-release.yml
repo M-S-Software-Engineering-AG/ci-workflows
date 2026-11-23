@@ -1,9 +1,9 @@
 name: image release
 
 # Language-agnostic: releases the <app-version>-Y.Z tag image-auto-tag pushed. Builds docker-bake.hcl with that
-# IMAGE_REVISION, Trivy-scans every target, pushes to ghcr, moves the rolling <app-version>-Y tag, creates the GitHub
-# release. Caller triggers on push of tags '*-[0-9]+.[0-9]+', grants `contents: write` + `packages: write` and passes
-# `secrets: inherit` for AUTOMATION_APP_KEY.
+# IMAGE_REVISION, Trivy-scans every target, pushes to ghcr (including the rolling :<app-version>-Y image tag), creates
+# the GitHub release. Caller triggers on push of tags '*-[0-9]+.[0-9]+' and grants `contents: write` +
+# `packages: write`. No git tag is pushed here, so the default GITHUB_TOKEN is enough.
 on:
   workflow_call:
 
@@ -54,18 +54,9 @@ jobs:
         with:
           files: docker-bake.hcl
           push: true
-      # The org ruleset protect-tags lets only the app create and move tags.
-      - uses: actions/create-github-app-token@v3
-        id: app
-        with:
-          client-id: ${{ vars.AUTOMATION_APP_CLIENT_ID }}
-          private-key: ${{ secrets.AUTOMATION_APP_KEY }}
-      - name: Move rolling tag and create release
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-          APP_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           prev=$(gh release view --json tagName --jq .tagName 2>/dev/null) || prev=
-          git tag -f "${VERSION%.*}"
-          git push -f "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${VERSION%.*}"
           gh release create "$VERSION" --generate-notes ${prev:+--notes-start-tag "$prev"} --latest

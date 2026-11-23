@@ -128,7 +128,7 @@ jobs:
 | Workflow | Inputs |
 |---|---|
 | `go-release` | `binary-name` (required), `package` (default `.`), `targets` (GOOS/GOARCH pairs, default linux, darwin, windows on amd64/arm64 + linux/arm) |
-| `image-release` | none; caller triggers on push of tags `'*-[0-9]+.[0-9]+'` (pushed by `image-auto-tag`), `secrets: inherit`. Builds with `IMAGE_REVISION` taken from the tag and fails if `docker-bake.hcl` doesn't produce that tag; moves the rolling `<app-version>-Y` |
+| `image-release` | none; caller triggers on push of tags `'*-[0-9]+.[0-9]+'` (pushed by `image-auto-tag`). Builds with `IMAGE_REVISION` taken from the tag and fails if `docker-bake.hcl` doesn't produce that tag. The rolling `<app-version>-Y` exists only as an image tag, not as a git tag |
 | `image-release-semver` | none; legacy, for repos tagged `v*` by `go-auto-tag`. `docker-bake.hcl` reads `VERSION`, `GIT_SHA`, `LATEST` (only add `:latest` when `LATEST == "true"`) |
 | `image-daily-scan` | none; scans every published `:latest` / `:latest-debug` tag in `docker-bake.hcl` |
 | `go-auto-tag` | `extra-paths` (default empty; docker-socket-proxy-go passes `Dockerfile docker-bake.hcl` so base-image updates release) |
