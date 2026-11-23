@@ -3,6 +3,8 @@ name: image auto tag
 # Tags main as <app-version>-Y.Z when the image inputs changed since the last tag; the tag push triggers
 # image-release. Y.Z comes from the git tags, not docker-bake.hcl: a new app version starts at 1.0, any other change
 # (Renovate bumping a dependency, a Dockerfile edit) releases Y.(Z+1), `breaking` releases (Y+1).0.
+# Only the automation bot's pushes (Renovate merges) tag automatically; anyone else's changes ship with the next one,
+# or right away by running the caller by hand.
 # Caller triggers on push to main and workflow_dispatch (passing its `breaking` input through), `secrets: inherit`.
 on:
   workflow_call:
@@ -14,6 +16,7 @@ on:
 
 jobs:
   tag:
+    if: github.event_name == 'workflow_dispatch' || github.actor == 'm-s-automation-bot[bot]'
     runs-on: ubuntu-latest
     concurrency:
       group: image-auto-tag-${{ github.repository }}
