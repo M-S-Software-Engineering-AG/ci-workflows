@@ -1,0 +1,79 @@
+name: image auto tag
+
+# Tags main as <app-version>-Y.Z when the image inputs changed since the last tag; the tag push triggers
+# image-release. Y.Z comes from the git tags, not docker-bake.hcl: a new app version starts at 1.0, any other change
+# (Renovate bumping a dependency, a Dockerfile edit) releases Y.(Z+1), `breaking` releases (Y+1).0.
+# Caller triggers on push to main and workflow_dispatch (passing its `breaking` input through), `secrets: inherit`.
+on:
+  workflow_call:
+    inputs:
+      breaking:
+        description: Breaking repackaging of the same app version, tag (Y+1).0
+        type: boolean
+        default: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: image-auto-tag-${{ github.repository }}
+      cancel-in-progress: false
+    permissions: {}
+    steps:
+      # The org ruleset protect-tags lets only the app create tags, and only its pushes trigger image-release.
+      - uses: actions/create-github-app-token@v3
+        id: app
+        with:
+          client-id: ${{ vars.AUTOMATION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_KEY }}
+      # Same as common-auto-tag: the last of a batch of Renovate merges tags them all.
+      - name: Batch Renovate merges
+        id: check
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          ref=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[0].head.ref // ""')
+          if [[ "$ref" == renovate/* ]]; then
+            pending=$(gh pr list -R "$GITHUB_REPOSITORY" --base "$GITHUB_REF_NAME" --state open \
+              --json headRefName,statusCheckRollup \
+              --jq '[.[] | select(.headRefName | startswith("renovate/"))
+                     | select(any(.statusCheckRollup[]; (.conclusion // .state) | IN("FAILURE","ERROR","CANCELLED","TIMED_OUT")) | not)] | length')
+            [[ "$pending" == 0 ]] || { echo "$pending Renovate PR(s) still open, deferring release"; exit 0; }
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        if: steps.check.outputs.release
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - name: Tag next version
+        if: steps.check.outputs.release
+        env:
+          BREAKING: ${{ inputs.breaking }}
+        run: |
+          refs=$(docker buildx bake -f docker-bake.hcl --print | jq -r '.target[].tags[]')
+          if bad=$(grep -vE ':(latest(-debug)?|[^:]+-[0-9]+(\.[0-9]+)?(-debug)?)$' <<< "$refs"); then
+            echo "::error::tags must be <app-version>-Y or <app-version>-Y.Z (optionally -debug), or latest[-debug]: $bad"
+            exit 1
+          fi
+          version=$(grep -E ':[^:]+-[0-9]+\.[0-9]+$' <<< "$refs" | head -1) || true
+          version=${version##*:}
+          [ -n "$version" ] || { echo "::error::no <app-version>-Y.Z tag in docker-bake.hcl"; exit 1; }
+          app=${version%-*}
+          last=$(for t in $(git tag -l "$app-*"); do
+            rev=${t#"$app-"}
+            if [[ $rev =~ ^[0-9]+\.[0-9]+$ ]]; then echo "$rev"; fi
+          done | sort -V | tail -1)
+          if [ -z "$last" ]; then
+            next=1.0
+          elif [ "$BREAKING" = true ]; then
+            next=$((${last%.*} + 1)).0
+          elif git diff --quiet "$app-$last" HEAD -- . ':!.github' ':!*.md' ':!LICENSE' ':!renovate.json'; then
+            echo "nothing changed since $app-$last, skipping"
+            exit 0
+          else
+            next=${last%.*}.$((${last#*.} + 1))
+          fi
+          echo "${last:+$app-$last} -> $app-$next"
+          git tag "$app-$next"
+          git push origin "refs/tags/$app-$next"

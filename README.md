@@ -10,7 +10,7 @@ GitHub only finds reusable workflows directly in `.github/workflows/` (no subfol
 |---|---|---|
 | `common-` | internal building blocks, **never referenced by a repo** | renovate, auto-tag, daily-scan |
 | `go-` | Go code: tests, binaries | renovate, auto-tag, pr, release, daily-scan |
-| `image-` | Docker image via `docker-bake.hcl`, any language | pr, release, release-semver, daily-scan |
+| `image-` | Docker image via `docker-bake.hcl`, any language | auto-tag, pr, release, release-semver, daily-scan |
 | `coredns-plugin-` | CoreDNS plugins | renovate, auto-tag, release, daily-scan |
 
 A `<type>-*.yml` either holds its own logic or calls a `common-*.yml` with the type's settings.
@@ -20,7 +20,7 @@ Types are building blocks; a repo combines the ones it needs and never reference
 |---|---|---|---|---|
 | container-supervisor, env2yml, corefile-gen | `go-pr` | `go-release` | `go-*` | `renovate/go` |
 | docker-socket-proxy-go | `go-pr` + `image-pr` | `image-release-semver` | `go-*` | `renovate/go` |
-| rootless-containers-coredns | `go-pr` + `image-pr` | `image-release` | `breaking` (default `false`); caller triggers on push to `main` and `workflow_dispatch` with a boolean `breaking` input it passes through, `secrets: inherit`. Tags in `docker-bake.hcl` must be `<app-version>-Y.Z`, `<app-version>-Y` (optionally `-debug`) or `latest[-debug]`; `Y.Z` is the `IMAGE_REVISION` bake variable, which the workflow sets from the git tags: a new app version starts at `1.0`, any change outside `.github`, `*.md`, `LICENSE`, `renovate.json` since the last `<app-version>-Y.Z` tag releases `Y.(Z+1)`, `breaking` releases `(Y+1).0`. The commit is tagged `<app-version>-Y.Z` and the rolling `<app-version>-Y` is moved |
+| rootless-containers-coredns, rootless-containers-traefik | `go-pr` + `image-pr` | `image-release` | `go-renovate`, `image-auto-tag`, `image-daily-scan` | `renovate/image` |
 | coredns-acmednschallenge, coredns-traefik | own `ci.yml` | `coredns-plugin-release` | `coredns-plugin-*` | `renovate/coredns-plugin` |
 
 coredns-plugin repos keep their own `ci.yml` (integration tests are plugin-specific) and their `.github/ci/*.sh` scripts (`sbom.sh` is used by release and daily scan).
@@ -128,10 +128,11 @@ jobs:
 | Workflow | Inputs |
 |---|---|
 | `go-release` | `binary-name` (required), `package` (default `.`), `targets` (GOOS/GOARCH pairs, default linux, darwin, windows on amd64/arm64 + linux/arm) |
-| `image-release` | none; caller triggers on push to `release/**` and `workflow_dispatch`, `secrets: inherit`. `main` never releases: each line lives on its own `release/*` branch (e.g. `release/v3.7.19-6` next to `release/v3.8.0-1`), and only the highest version gets `:latest` and the Latest GitHub release. `renovate/image` sends every update to `main` but only patch updates (plus security fixes) to `release/*`. Tags in `docker-bake.hcl` must be `<app-version>-Y.Z`, `<app-version>-Y` (optionally `-debug`) or `latest[-debug]`; `Y.Z` is the `IMAGE_REVISION` bake variable. `Y` is bumped by hand; `Z` is a floor the workflow raises: when anything outside `.github`, `*.md`, `LICENSE`, `renovate.json` changed since the last `<app-version>-Y.*` tag, it releases the next `Z`. The commit is tagged `<app-version>-Y.Z` and the rolling `<app-version>-Y` is moved |
+| `image-release` | none; caller triggers on push of tags `'*-[0-9]+.[0-9]+'` (pushed by `image-auto-tag`), `secrets: inherit`. Builds with `IMAGE_REVISION` taken from the tag and fails if `docker-bake.hcl` doesn't produce that tag; moves the rolling `<app-version>-Y` |
 | `image-release-semver` | none; legacy, for repos tagged `v*` by `go-auto-tag`. `docker-bake.hcl` reads `VERSION`, `GIT_SHA`, `LATEST` (only add `:latest` when `LATEST == "true"`) |
 | `image-daily-scan` | none; scans every published `:latest` / `:latest-debug` tag in `docker-bake.hcl` |
 | `go-auto-tag` | `extra-paths` (default empty; docker-socket-proxy-go passes `Dockerfile docker-bake.hcl` so base-image updates release) |
+| `image-auto-tag` | `breaking` (default `false`); caller triggers on push to `main` and `workflow_dispatch` with a boolean `breaking` input it passes through, `secrets: inherit`. Tags in `docker-bake.hcl` must be `<app-version>-Y.Z`, `<app-version>-Y` (optionally `-debug`) or `latest[-debug]`; `Y.Z` is the `IMAGE_REVISION` bake variable, taken from the git tags: a new app version starts at `1.0`, any change outside `.github`, `*.md`, `LICENSE`, `renovate.json` since the last `<app-version>-Y.Z` tag tags `Y.(Z+1)`, `breaking` tags `(Y+1).0`. Like `go-auto-tag`, it waits for the last of a batch of Renovate merges |
 | `coredns-plugin-release` | `plugin-name` (required, names `<plugin-name>.cdx.json`) |
 
 ## Requirements
