@@ -45,7 +45,7 @@ jobs:
         run: |
           id=$(gh api "/users/${SLUG}[bot]" --jq .id)
           echo "value=${SLUG}[bot] <${id}+${SLUG}[bot]@users.noreply.github.com>" >> "$GITHUB_OUTPUT"
-      - uses: renovatebot/github-action@v47.0.0
+      - uses: renovatebot/github-action@v48.0.0
         with:
           token: ${{ steps.app.outputs.token }}
         env:
